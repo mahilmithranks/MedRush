@@ -48,7 +48,7 @@ function CapsuleBot({ position = [0, 0, 0], scale = 1, color = '#f44336' }) {
 }
 
 function AuthSceneCanvas() {
-  const capsuleColors = ['#f44336', '#71706E', '#2196f3', '#FFC0CB', '#FFD700']
+  const capsuleColors = ['#f44336', '#FEF098', '#2196f3', '#FFC0CB', '#FFD700']
 
   // ✅ Store generated capsules in a ref (persists across re-renders, never regenerates)
   const capsuleDataRef = useRef(
