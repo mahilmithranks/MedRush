@@ -19,7 +19,6 @@ const UserSchema = new mongoose.Schema({
     isDeliveryPartnerApproved: { type: Boolean, default: false },
 }, { timestamps: true });
 
-// This pattern prevents errors during development hot-reloading
-const User = mongoose.models.User || mongoose.model('User', UserSchema);
+const User = mongoose.model('User', UserSchema);
 
 export default User;

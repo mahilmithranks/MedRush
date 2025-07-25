@@ -1,94 +1,103 @@
-import { Routes, Route, useSearchParams, useNavigate } from 'react-router-dom';
-import { SignUp, SignIn, useUser } from '@clerk/clerk-react';
-import { useEffect } from 'react';
-import SelectRole from './pages/SelectRole';
+import React, { useState, useEffect } from 'react';
+import { Routes, Route, useNavigate } from 'react-router-dom';
+import { useAuth, SignIn, SignUp, UserButton } from '@clerk/clerk-react';
 
-// Import all your page and helper components
-import ProtectedRoute from './components/ProtectedRoute';
+// Import all your page components
+import SelectRole from './pages/SelectRole';
 import CustomerDashboard from './pages/CustomerDashboard';
 import PharmacistDashboard from './pages/PharmacistDashboard';
 import DeliveryDashboard from './pages/DeliveryDashboard';
+import AdminDashboard from './pages/AdminDashboard';
 import PendingApproval from './pages/PendingApproval';
 import UploadDocuments from './pages/UploadDocuments';
-import AdminDashboard from './pages/AdminDashboard';
-import UploadPrescription from './pages/UploadPrescription'; // The missing import is now added
 
-// This helper component correctly reads the role from the URL
-// and passes it to Clerk during the sign-up process.
-function SignUpWithRole() {
-  const [searchParams] = useSearchParams();
-  const role = searchParams.get('role');
-  const metadata = {
-    role: role,
-    isApproved: role === 'customer' || role === 'admin' ? true : false,
-  };
-  return <SignUp routing="path" path="/sign-up" unsafeMetadata={metadata} redirectUrl="/upload-documents" />;
-}
+// This component handles the main routing logic after a user logs in
+const AppLayout = () => {
+    const { isSignedIn, isLoaded, getToken } = useAuth();
+    const navigate = useNavigate();
+    const [appUser, setAppUser] = useState(null);
+    const [isLoading, setIsLoading] = useState(true);
 
-// This component handles redirecting users to the correct dashboard
-// after they sign in.
-function DashboardRedirect() {
-  const navigate = useNavigate();
-  const { user, isLoaded } = useUser();
+    useEffect(() => {
+        if (!isLoaded) return;
 
-  // Move the navigation logic inside a useEffect hook
-  useEffect(() => {
-    if (isLoaded && user) {
-      const role = user.publicMetadata.role;
-      const isApproved = user.publicMetadata.isApproved;
+        if (isSignedIn) {
+            const fetchAppUser = async () => {
+                try {
+                    const token = await getToken();
+                    const response = await fetch('/api/users/me', {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
 
-      if (role === 'admin') {
-          navigate('/admin-dashboard', { replace: true });
-      } else if (role === 'customer') {
-        navigate('/customer-dashboard', { replace: true });
-      } else if (role === 'pharmacist' || role === 'delivery-partner') {
-        if (isApproved) {
-          navigate(`/${role}-dashboard`, { replace: true });
+                    if (!response.ok) {
+                        throw new Error(`Network response was not ok: ${response.statusText}`);
+                    }
+                    
+                    const data = await response.json();
+                    setAppUser(data);
+                } catch (error) {
+                    console.error("Failed to fetch app user data:", error);
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+            fetchAppUser();
         } else {
-          navigate('/pending-approval', { replace: true });
+            setIsLoading(false);
         }
-      }
+    }, [isLoaded, isSignedIn, navigate, getToken]);
+
+    if (isLoading) {
+        return <div className="p-8 text-center">Loading your experience...</div>;
     }
-  }, [isLoaded, user, navigate]); // Add dependencies to the hook
 
-  // Return a loading indicator while the redirect happens
-  return <div className="flex items-center justify-center h-screen">Redirecting...</div>;
-}
+    if (!isSignedIn) {
+        return <SelectRole />;
+    }
 
+    if (appUser) {
+        return (
+            <div>
+                <header className="p-4 flex justify-end">
+                    <UserButton afterSignOutUrl="/" />
+                </header>
+                
+                <main>
+                    {(() => {
+                        switch (appUser.role) {
+                            case 'admin':
+                                return <AdminDashboard />;
+                            case 'pharmacist':
+                                if (!appUser.pharmacyLicenseUrl) return <UploadDocuments userRole="pharmacist" />;
+                                if (!appUser.isPharmacistApproved) return <PendingApproval />;
+                                return <PharmacistDashboard />;
+                            case 'delivery-partner':
+                                if (!appUser.deliveryLicenseUrl) return <UploadDocuments userRole="delivery-partner" />;
+                                if (!appUser.isDeliveryPartnerApproved) return <PendingApproval />;
+                                return <DeliveryDashboard />;
+                            case 'customer':
+                            default:
+                                return <CustomerDashboard />;
+                        }
+                    })()}
+                </main>
+            </div>
+        );
+    }
+
+    return <div className="p-8 text-center">Finalizing setup...</div>;
+};
+
+// The main App component that defines your application's routes
 export default function App() {
-  return (
-    <Routes>
-      {/* Public Routes */}
-      <Route path="/" element={<SelectRole />} />
-      <Route path="/sign-in/*" element={<SignIn routing="path" path="/sign-in" redirectUrl="/dashboard-redirect" />} />
-      <Route path="/sign-up/*" element={<SignUpWithRole />} />
-
-      {/* Post-Auth Flow Routes */}
-      <Route path="/upload-documents" element={<UploadDocuments />} />
-      <Route path="/dashboard-redirect" element={<DashboardRedirect />} />
-      <Route path="/pending-approval" element={<PendingApproval />} />
-
-      {/* Protected Dashboard Routes */}
-      <Route
-        path="/admin-dashboard"
-        element={<ProtectedRoute requiredRole="admin"><AdminDashboard /></ProtectedRoute>}
-      />
-      <Route
-        path="/customer-dashboard"
-        element={<ProtectedRoute requiredRole="customer"><CustomerDashboard /></ProtectedRoute>}
-      />
-      <Route
-        path="/pharmacist-dashboard"
-        element={<ProtectedRoute requiredRole="pharmacist" requireApproved={true}><PharmacistDashboard /></ProtectedRoute>}
-      />
-      <Route
-        path="/delivery-dashboard"
-        element={<ProtectedRoute requiredRole="delivery-partner" requireApproved={true}><DeliveryDashboard /></ProtectedRoute>}
-      />
-      <Route
-        path="/upload-prescription"
-        element={<ProtectedRoute requiredRole="customer"><UploadPrescription /></ProtectedRoute>}
-      />
-    </Routes>
-  );
+    return (
+        <Routes>
+            {/* Public routes for signing in and up */}
+            <Route path="/sign-in/*" element={<SignIn routing="path" path="/sign-in" />} />
+            <Route path="/sign-up/*" element={<SignUp routing="path" path="/sign-up" />} />
+            
+            {/* The main route that handles all authenticated users */}
+            <Route path="/*" element={<AppLayout />} />
+        </Routes>
+    );
 }

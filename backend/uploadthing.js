@@ -2,28 +2,41 @@ import { createUploadthing } from "uploadthing/express";
 
 const f = createUploadthing();
 
-const auth = (req, res) => ({ id: "fakeId" }); 
+const handleAuth = (req, res, next) => {
+    // Pass the user ID sent from the frontend to the router
+    // This allows us to use it in `onUploadComplete` if needed
+    req.user = { id: req.headers["x-user-id"] };
+    next();
+};
 
+// Define all file routers for the application
 export const ourFileRouter = {
-  imageUploader: f({ image: { maxFileSize: "4MB" } })
-    .middleware(async ({ req, res }) => {
-      const user = await auth(req, res);
-      if (!user) throw new Error("Unauthorized");
-      return { userId: user.id };
+    // For customers uploading prescriptions
+    prescriptionUploader: f({
+        image: { maxFileSize: "4MB", maxFileCount: 1 },
+        pdf: { maxFileSize: "4MB", maxFileCount: 1 },
     })
+    .middleware(handleAuth)
     .onUploadComplete(async ({ metadata, file }) => {
-      console.log("Upload complete for userId:", metadata.userId);
-      console.log("file url", file.url);
+        console.log("Prescription upload complete for userId:", metadata.userId);
     }),
-  
-  imageOrPdfUploader: f(["image", "pdf"])
-    .middleware(async ({ req, res }) => {
-      const user = await auth(req, res);
-      if (!user) throw new Error("Unauthorized");
-      return { userId: user.id };
+
+    // For pharmacists uploading their license
+    pharmacyLicenseUploader: f({
+        image: { maxFileSize: "4MB", maxFileCount: 1 },
+        pdf: { maxFileSize: "4MB", maxFileCount: 1 },
     })
+    .middleware(handleAuth)
     .onUploadComplete(async ({ metadata, file }) => {
-      console.log("Upload complete for userId:", metadata.userId);
-      console.log("file url", file.url);
+        console.log("Pharmacy license upload complete for userId:", metadata.userId);
+    }),
+
+    // For delivery partners uploading their documents
+    deliveryDocsUploader: f({
+        image: { maxFileSize: "4MB", maxFileCount: 1 },
+    })
+    .middleware(handleAuth)
+    .onUploadComplete(async ({ metadata, file }) => {
+        console.log("Delivery doc upload complete for userId:", metadata.userId);
     }),
 };

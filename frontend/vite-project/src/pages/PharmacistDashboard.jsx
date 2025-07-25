@@ -1,98 +1,97 @@
-import { UserButton, useUser } from "@clerk/clerk-react";
-import { useState, useEffect } from "react";
+// src/pages/PharmacistDashboard.jsx
+
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+import { useAuth } from "@clerk/clerk-react";
+
+// Import the modal component
+import PrescriptionModal from '../components/PrescriptionModal';
 
 export default function PharmacistDashboard() {
-  const { user } = useUser();
-  const [prescriptions, setPrescriptions] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+    const [pendingPrescriptions, setPendingPrescriptions] = useState([]);
+    const [selectedPrescription, setSelectedPrescription] = useState(null);
+    const [isLoading, setIsLoading] = useState(true);
+    const { getToken } = useAuth(); // Use this to get a token for authenticated requests
 
-  useEffect(() => {
-    const fetchPendingPrescriptions = async () => {
-      try {
-        const response = await fetch('http://localhost:8000/api/prescriptions/pending');
-        if (!response.ok) {
-          throw new Error('Failed to fetch prescriptions');
+    // Function to fetch pending prescriptions
+    const fetchPrescriptions = async () => {
+        setIsLoading(true);
+        try {
+            const token = await getToken();
+            const response = await axios.get('/api/prescriptions/pending', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            setPendingPrescriptions(response.data);
+        } catch (error) {
+            console.error("Error fetching prescriptions:", error);
+        } finally {
+            setIsLoading(false);
         }
-        const data = await response.json();
-        setPrescriptions(data);
-      } catch (err) {
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
     };
 
-    fetchPendingPrescriptions();
-  }, []);
+    // Fetch data when the component mounts
+    useEffect(() => {
+        fetchPrescriptions();
+    }, []);
 
-  const handleUpdateStatus = async (prescriptionId, newStatus) => {
-    try {
-        const response = await fetch(`http://localhost:8000/api/prescriptions/${prescriptionId}/status`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ status: newStatus, pharmacistClerkId: user.id }),
-        });
+    // Function to handle approving or rejecting a prescription
+    const handleUpdateStatus = async (id, status) => {
+        try {
+            const token = await getToken();
+            const { userId } = useAuth(); // Get the current pharmacist's clerkId
+            await axios.put(`/api/prescriptions/${id}/status`, 
+                { status, pharmacistClerkId: userId },
+                { headers: { 'Authorization': `Bearer ${token}` } }
+            );
 
-        if (!response.ok) {
-            throw new Error('Failed to update prescription status');
+            // Refresh the list after updating
+            fetchPrescriptions();
+            setSelectedPrescription(null); // Close the modal
+        } catch (error) {
+            console.error(`Error updating prescription to ${status}:`, error);
         }
+    };
 
-        // Remove the prescription from the list after handling it
-        setPrescriptions(prescriptions.filter(p => p._id !== prescriptionId));
-        alert(`Prescription ${newStatus} successfully!`);
-
-    } catch (err) {
-        alert(err.message);
+    if (isLoading) {
+        return <div className="p-8">Loading prescriptions...</div>;
     }
-  };
 
-  return (
-    <div className="p-8">
-      <header className="flex justify-between items-center mb-8">
-        <h1 className="text-3xl font-bold">Pharmacist Dashboard</h1>
-        <UserButton />
-      </header>
-      <main>
-        <h2 className="text-2xl font-semibold mb-4">Pending Prescriptions</h2>
-        {loading && <p>Loading prescriptions...</p>}
-        {error && <p className="text-red-500">Error: {error}</p>}
-        <div className="bg-white shadow rounded-lg">
-          <ul className="divide-y divide-gray-200">
-            {prescriptions.length > 0 ? prescriptions.map((p) => (
-              <li key={p._id} className="p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center">
-                <div className="mb-4 sm:mb-0">
-                  <p className="font-semibold">Customer: {p.customerId.email}</p>
-                  <a 
-                    href={p.prescriptionImageUrl} 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="text-sm text-blue-500 hover:underline"
-                  >
-                    View Prescription
-                  </a>
-                </div>
-                <div className="flex space-x-2">
-                    <button
-                        onClick={() => handleUpdateStatus(p._id, 'approved')}
-                        className="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded"
-                    >
-                        Approve
-                    </button>
-                    <button
-                        onClick={() => handleUpdateStatus(p._id, 'rejected')}
-                        className="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded"
-                    >
-                        Reject
-                    </button>
-                </div>
-              </li>
-            )) : (
-              <p className="p-4 text-gray-500">No prescriptions are currently pending.</p>
-            )}
-          </ul>
+    return (
+        <div className="bg-gray-50 min-h-screen">
+            <div className="max-w-7xl mx-auto p-8">
+                <h1 className="text-4xl font-bold text-gray-800 mb-6">Pharmacist Dashboard</h1>
+                <h2 className="text-2xl font-semibold text-gray-700 mb-8">Pending Prescriptions</h2>
+
+                {pendingPrescriptions.length === 0 ? (
+                    <p className="text-center text-gray-500 text-lg">No pending prescriptions at the moment.</p>
+                ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {pendingPrescriptions.map((prescription) => (
+                            <div key={prescription._id} className="bg-white p-6 rounded-lg shadow-md hover:shadow-xl transition">
+                                <h3 className="text-lg font-bold text-gray-900">Request from</h3>
+                                <p className="text-md text-gray-600 mb-4">{prescription.customerId.email}</p>
+                                <p className="text-sm text-gray-500">
+                                    Received: {new Date(prescription.createdAt).toLocaleDateString()}
+                                </p>
+                                <button
+                                    onClick={() => setSelectedPrescription(prescription)}
+                                    className="mt-4 w-full bg-blue-600 text-white font-semibold py-2 rounded-lg hover:bg-blue-700 transition"
+                                >
+                                    Review Prescription
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+
+            {/* Render the modal when a prescription is selected */}
+            <PrescriptionModal
+                prescription={selectedPrescription}
+                onClose={() => setSelectedPrescription(null)}
+                onApprove={(id) => handleUpdateStatus(id, 'approved')}
+                onReject={(id) => handleUpdateStatus(id, 'rejected')}
+            />
         </div>
-      </main>
-    </div>
-  );
+    );
 }

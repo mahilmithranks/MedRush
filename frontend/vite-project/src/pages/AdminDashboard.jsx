@@ -1,83 +1,80 @@
-import { UserButton } from "@clerk/clerk-react";
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+import { useAuth } from "@clerk/clerk-react";
 
 export default function AdminDashboard() {
-  const [users, setUsers] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+    const [unapprovedUsers, setUnapprovedUsers] = useState([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const { getToken } = useAuth();
 
-  useEffect(() => {
     const fetchUnapprovedUsers = async () => {
-      try {
-        const response = await fetch('http://localhost:8000/api/admin/unapproved-users');
-        if (!response.ok) {
-          throw new Error('Failed to fetch users');
+        setIsLoading(true);
+        try {
+            const token = await getToken();
+            const response = await axios.get('/api/admin/unapproved-users', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            setUnapprovedUsers(response.data);
+        } catch (error) {
+            console.error("Error fetching unapproved users:", error);
+        } finally {
+            setIsLoading(false);
         }
-        const data = await response.json();
-        setUsers(data);
-      } catch (err) {
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
     };
 
-    fetchUnapprovedUsers();
-  }, []);
+    useEffect(() => {
+        fetchUnapprovedUsers();
+    }, []);
 
-  const handleApproveUser = async (clerkId) => {
-    try {
-        const response = await fetch('http://localhost:8000/api/admin/approve-user', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ clerkId: clerkId }),
-        });
-
-        if (!response.ok) {
-            throw new Error('Failed to approve user');
+    const handleApproveUser = async (clerkId) => {
+        try {
+            const token = await getToken();
+            await axios.put('/api/admin/approve-user', 
+                { clerkId }, // Request body
+                { headers: { 'Authorization': `Bearer ${token}` } }
+            );
+            alert('User approved!');
+            // Refresh the list to remove the approved user
+            fetchUnapprovedUsers();
+        } catch (error) {
+            console.error("Error approving user:", error);
+            alert('Failed to approve user.');
         }
+    };
 
-        // Refresh the list of users after approval
-        setUsers(users.filter(user => user.clerkId !== clerkId));
-        alert('User approved successfully!');
-
-    } catch (err) {
-        alert(err.message);
+    if (isLoading) {
+        return <div className="p-8 text-center">Loading users for approval...</div>;
     }
-  };
 
-  return (
-    <div className="p-8">
-      <header className="flex justify-between items-center mb-8">
-        <h1 className="text-3xl font-bold">Admin Dashboard</h1>
-        <UserButton afterSignOutUrl="/" />
-      </header>
-      <main>
-        <h2 className="text-2xl font-semibold mb-4">Pending Approvals</h2>
-        {loading && <p>Loading users...</p>}
-        {error && <p className="text-red-500">Error: {error}</p>}
-        <div className="bg-white shadow rounded-lg">
-          <ul className="divide-y divide-gray-200">
-            {users.length > 0 ? users.map((user) => (
-              <li key={user.clerkId} className="p-4 flex justify-between items-center">
-                <div>
-                  <p className="font-semibold">{user.email}</p>
-                  <p className="text-sm text-gray-500 capitalize">{user.role}</p>
-                  {/* In a real app, you'd have links to their uploaded docs here */}
-                </div>
-                <button
-                  onClick={() => handleApproveUser(user.clerkId)}
-                  className="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded"
-                >
-                  Approve
-                </button>
-              </li>
-            )) : (
-              <p className="p-4 text-gray-500">No users are currently pending approval.</p>
-            )}
-          </ul>
+    return (
+        <div className="p-8">
+            <h1 className="text-3xl font-bold mb-6">Admin Dashboard</h1>
+            <h2 className="text-xl font-semibold mb-4">Pending Approvals</h2>
+            <div className="space-y-4">
+                {unapprovedUsers.length > 0 ? (
+                    unapprovedUsers.map(user => (
+                        <div key={user.clerkId} className="bg-white p-4 rounded-lg shadow-md flex justify-between items-center">
+                            <div>
+                                <p className="font-bold">{user.email}</p>
+                                <p className="text-sm capitalize text-gray-600">{user.role.replace('-', ' ')}</p>
+                                {user.pharmacyLicenseUrl && (
+                                    <a href={user.pharmacyLicenseUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline">
+                                        View License
+                                    </a>
+                                )}
+                            </div>
+                            <button
+                                onClick={() => handleApproveUser(user.clerkId)}
+                                className="bg-green-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-green-700 transition"
+                            >
+                                Approve
+                            </button>
+                        </div>
+                    ))
+                ) : (
+                    <p className="text-gray-500">No users are currently waiting for approval.</p>
+                )}
+            </div>
         </div>
-      </main>
-    </div>
-  );
+    );
 }
